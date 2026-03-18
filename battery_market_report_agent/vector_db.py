@@ -39,12 +39,19 @@ def get_qdrant_client(settings: Settings | None = None) -> QdrantClient:
     return QdrantClient(url=settings.qdrant_url, timeout=20, check_compatibility=False)
 
 
-def ensure_collection(client: QdrantClient, collection_name: str, vector_size: int = 1536) -> None:
+def embedding_dimension() -> int:
+    embeddings = get_embedding_model()
+    vector = embeddings.embed_query("battery market embedding dimension probe")
+    return len(vector)
+
+
+def ensure_collection(client: QdrantClient, collection_name: str, vector_size: int | None = None) -> None:
     if client.collection_exists(collection_name):
         return
+    size = vector_size or embedding_dimension()
     client.create_collection(
         collection_name=collection_name,
-        vectors_config=rest.VectorParams(size=vector_size, distance=rest.Distance.COSINE),
+        vectors_config=rest.VectorParams(size=size, distance=rest.Distance.COSINE),
     )
 
 

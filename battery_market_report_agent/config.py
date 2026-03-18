@@ -25,7 +25,8 @@ class Settings:
     qdrant_collection_lg: str = os.getenv("QDRANT_COLLECTION_LG", "battery_market_lg")
     qdrant_collection_catl: str = os.getenv("QDRANT_COLLECTION_CATL", "battery_market_catl")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
-    embedding_model: str = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+    embedding_model: str = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+    embedding_device: str = os.getenv("EMBEDDING_DEVICE", "cpu")
     default_query: str = (
         "글로벌 배터리 시장 변화 속에서 LG에너지솔루션과 CATL의 포트폴리오 다각화 전략을 비교 분석하고, "
         "LG에너지솔루션 관점의 실행 가능한 시사점을 도출해줘."

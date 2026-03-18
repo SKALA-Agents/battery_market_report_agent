@@ -5,11 +5,13 @@ import os
 import re
 from collections import Counter
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import Dict, Iterable, List, Optional
 
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_openai import ChatOpenAI
 from tavily import TavilyClient
 
 from .config import get_settings
@@ -40,10 +42,14 @@ def get_chat_model() -> ChatOpenAI:
     return ChatOpenAI(model=settings.openai_model, temperature=0)
 
 
-def get_embedding_model() -> OpenAIEmbeddings:
+@lru_cache(maxsize=1)
+def get_embedding_model() -> HuggingFaceEmbeddings:
     settings = get_settings()
-    require_env("OPENAI_API_KEY")
-    return OpenAIEmbeddings(model=settings.embedding_model)
+    return HuggingFaceEmbeddings(
+        model_name=settings.embedding_model,
+        model_kwargs={"device": settings.embedding_device},
+        encode_kwargs={"normalize_embeddings": True},
+    )
 
 
 def structured_llm(schema):
