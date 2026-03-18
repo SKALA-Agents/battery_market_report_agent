@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import io
 import re
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+import requests
+from bs4 import BeautifulSoup
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_qdrant import QdrantVectorStore
+from pypdf import PdfReader
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as rest
 
@@ -21,6 +25,13 @@ from .tools import (
     make_source_id,
     map_tags_to_criteria,
 )
+
+REQUEST_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36"
+    )
+}
 
 
 def get_qdrant_client(settings: Settings | None = None) -> QdrantClient:
@@ -46,9 +57,57 @@ def collection_name_for_path(path: Path, settings: Settings) -> Tuple[str, str]:
     return settings.qdrant_collection_catl, "catl"
 
 
-def parse_source_pack(path: Path) -> List[Document]:
+def _clean_text(text: str) -> str:
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def _extract_html_text(html: str) -> str:
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "noscript", "svg", "header", "footer"]):
+        tag.decompose()
+    candidates = []
+    for selector in ["article", "main", "[role='main']", ".article", ".content", ".main-content"]:
+        candidates.extend(soup.select(selector))
+    if candidates:
+        text = " ".join(candidate.get_text(" ", strip=True) for candidate in candidates)
+        return _clean_text(text)
+    body = soup.body.get_text(" ", strip=True) if soup.body else soup.get_text(" ", strip=True)
+    return _clean_text(body)
+
+
+def _extract_pdf_text(content: bytes) -> str:
+    reader = PdfReader(io.BytesIO(content))
+    texts = []
+    for page in reader.pages[:30]:
+        try:
+            texts.append(page.extract_text() or "")
+        except Exception:
+            continue
+    return _clean_text(" ".join(texts))
+
+
+def fetch_url_text(url: str) -> str:
+    if not url:
+        return ""
+    try:
+        response = requests.get(url, headers=REQUEST_HEADERS, timeout=30)
+        response.raise_for_status()
+    except Exception:
+        return ""
+
+    content_type = (response.headers.get("content-type") or "").lower()
+    if "application/pdf" in content_type or url.lower().endswith(".pdf"):
+        return _extract_pdf_text(response.content)
+    if not response.encoding or response.encoding.lower() == "iso-8859-1":
+        response.encoding = response.apparent_encoding or "utf-8"
+    text = response.text
+    return _extract_html_text(text)
+
+
+def parse_source_pack(path: Path) -> List[dict]:
     text = path.read_text(encoding="utf-8")
-    source_docs: List[Document] = []
+    source_entries: List[dict] = []
     matches = list(re.finditer(r"^#### (.+)$", text, flags=re.MULTILINE))
     for index, match in enumerate(matches):
         title = match.group(1).strip()
@@ -61,28 +120,59 @@ def parse_source_pack(path: Path) -> List[Document]:
         bullet_lines = re.findall(r"^\s*-\s+(.*)$", block, flags=re.MULTILINE)
         excerpt = "\n".join(line.strip() for line in bullet_lines if not line.startswith("Link:"))
         source_id = make_source_id(title, url)
-        metadata = {
-            "source_id": source_id,
-            "source_type": "official_company" if "lg" in path.stem.lower() or "catl" in path.stem.lower() else "industry_report",
-            "title": title,
-            "url": url,
-            "date": extract_year(f"{title} {url} {excerpt}"),
-            "publisher": re.sub(r"^www\.", "", re.sub(r"^https?://", "", url).split("/")[0]) if url else path.stem,
-            "excerpt": excerpt,
-            "numeric_facts": extract_numeric_facts(excerpt),
-            "reliability_note": "static_rag_source_pack",
-            "company_scope": "lg" if "lg" in path.stem.lower() else ("catl" if "catl" in path.stem.lower() else "market"),
-            "criterion_tags": map_tags_to_criteria(tags + [excerpt, title]),
-            "sentiment_side": infer_sentiment_side(tags, excerpt),
-            "region_tags": infer_region_tags(f"{title} {excerpt}"),
-        }
-        source_docs.append(
+        source_entries.append(
+            {
+                "source_id": source_id,
+                "title": title,
+                "url": url,
+                "summary_excerpt": excerpt,
+                "tags": tags,
+                "metadata": {
+                    "source_id": source_id,
+                    "source_type": "official_company" if "lg" in path.stem.lower() or "catl" in path.stem.lower() else "industry_report",
+                    "title": title,
+                    "url": url,
+                    "date": extract_year(f"{title} {url} {excerpt}"),
+                    "publisher": re.sub(r"^www\.", "", re.sub(r"^https?://", "", url).split("/")[0]) if url else path.stem,
+                    "excerpt": excerpt,
+                    "numeric_facts": extract_numeric_facts(excerpt),
+                    "reliability_note": "static_rag_source_pack",
+                    "company_scope": "lg" if "lg" in path.stem.lower() else ("catl" if "catl" in path.stem.lower() else "market"),
+                    "criterion_tags": map_tags_to_criteria(tags + [excerpt, title]),
+                    "sentiment_side": infer_sentiment_side(tags, excerpt),
+                    "region_tags": infer_region_tags(f"{title} {excerpt}"),
+                },
+            }
+        )
+    return source_entries
+
+
+def build_source_documents(path: Path) -> List[Document]:
+    documents: List[Document] = []
+    for entry in parse_source_pack(path):
+        metadata = dict(entry["metadata"])
+        raw_text = fetch_url_text(entry["url"])
+        page_content = raw_text if raw_text else ""
+        fallback_content = _clean_text(
+            f"{entry['title']} {entry['summary_excerpt']} Tags: {', '.join(entry['tags'])}"
+        )
+        final_content = page_content if len(page_content) >= 400 else fallback_content
+        metadata["excerpt"] = final_content[:1500]
+        metadata["numeric_facts"] = extract_numeric_facts(final_content)
+        metadata["date"] = metadata.get("date") or extract_year(final_content)
+        metadata["criterion_tags"] = metadata.get("criterion_tags") or map_tags_to_criteria(
+            entry["tags"] + [entry["summary_excerpt"], entry["title"], final_content[:2000]]
+        )
+        metadata["sentiment_side"] = infer_sentiment_side(entry["tags"], final_content[:2000])
+        metadata["region_tags"] = infer_region_tags(final_content[:2000])
+        metadata["reliability_note"] = "full_text_fetch" if raw_text else "summary_fallback"
+        documents.append(
             Document(
-                page_content=f"{title}\n{excerpt}\nTags: {', '.join(tags)}",
+                page_content=final_content,
                 metadata=metadata,
             )
         )
-    return source_docs
+    return documents
 
 
 def split_documents(documents: List[Document], company_scope: str) -> List[Document]:
@@ -112,7 +202,7 @@ def ingest_static_corpus(force_recreate: bool = False, settings: Settings | None
             ingested_counts[scope] = client.count(collection_name).count
             continue
 
-        source_docs = parse_source_pack(path)
+        source_docs = build_source_documents(path)
         chunks = split_documents(source_docs, scope)
         store = QdrantVectorStore(
             client=client,

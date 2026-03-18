@@ -9,3 +9,5 @@ python-dotenv
 pydantic
 matplotlib
 pandas
+beautifulsoup4
+pypdf
