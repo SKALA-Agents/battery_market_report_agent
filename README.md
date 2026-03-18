@@ -1,28 +1,35 @@
-# Battery Market Report Agent
+# Battery Market Report AI Agent
 
 > LG에너지솔루션과 CATL의 전략을 데이터 기반으로 비교 분석하고, 의사결정에 활용 가능한 시장 보고서를 생성하는 멀티 에이전트 시스템
 
 - 핵심 목표 : **비교 가능성, 근거성, 추적 가능성**을 갖춘 배터리 시장 리포트를 자동 생성
 - 분석 파이프라인 : `시장 분석` → `기업별 조사/분석` → `비교` → `SWOT` → `인사이트 생성` → `보고서 생성`
-- `LG 에너지 솔루션`이 보고서의 주요 독자라는 가정 하에 작성
+- `LG 에너지 솔루션`이 보고서의 **주요 독자라는 가정** 하에 작성
 
 ## Overview
-- **Objective**
+- **Objective**  
+  
   LG에너지솔루션과 CATL의 경쟁력, 전략 차이, 리스크를 동일한 기준으로 비교하고 의사결정에 활용 가능한 시사점을 도출하고 보고서로 작성
 
-- **Method**
+- **Method**  
+  
   `Supervisor Pattern`, `Parallel Branch`, `RAG-first Retrieval`, `Web Search Fallback` 구조를 결합해 신뢰도 높은 분석 흐름 구성
 
-- **Output**
+- **Output**  
+  
   배터리 시장 전략 분석 보고서
   - Executive Summary, 시장 분석, 기업별 전략 분석, 비교표, 기업별 SWOT, 전략 인사이트, References
 
-## Key Features
-1. SWOT 분석과 SO/ST/WO/WT 전략 인사이트 도출을 포함한 의사결정형 보고서 생성
-2. `RAG-first + Web Search fallback` 설계를 통해 자료 부족·최신성 부족·출처 편향이 감지될 때 `retry/loop` 분기로 보강
-3. 동일한 7개 평가 기준을 양사에 공통 적용해 비교 일관성과 해석 가능성을 확보
-   - 포트폴리오 다양성, 기술 경쟁력, 시장 대응력, 공급망 전략, 고객/파트너 구조, 글로벌 확장성, 리스크 대응력
-4. source id와 metadata 기반 근거 링크를 통해 보고서의 근거 확인 가능
+## ⭐️ Key Features
+
+| Key Feature | 설명 | 예시 |
+|---|---|---|
+| **LG / CATL 데이터 오염 분리** | LG와 CATL을 별도 브랜치와 별도 KB로 분리해 수집, 검증, 분석을 수행함으로써 기업 간 데이터 혼입과 컨텍스트 오염을 방지한다. | `LG KB`, `CATL KB`를 분리하고 `lg_research_node`, `catl_research_node`가 각자 자기 기업 데이터만 사용하도록 설계 |
+| **RAG-first + Web Search fallback 기반 보강 루프** | 기본적으로 KB/RAG를 우선 사용하고, 자료 부족/자료 노후/출처 편향/반증 부족/비교 불가능 상태가 감지되면 Web Search로 보강한 뒤 retry/loop를 수행한다. | 긍정 자료만 모으지 않도록 risk query, negative query, counter-evidence 관점 고려 → criteria와 control strategy에 반영 |
+| **SO/ST/WO/WT 전략 인사이트 도출** | 비교 분석 결과를 기반으로 SWOT과 SO/ST/WO/WT 전략 인사이트까지 도출하여 실제 전략 판단에 활용 가능한 보고서를 생성한다. | `Compare -> SWOT -> SO/ST/WO/WT -> Report` 흐름을 통해 “CATL 대비 LG의 공급망 리스크 대응 강화 필요” 같은 실행형 시사점 도출 |
+| **공통 7개 평가 기준 기반 비교** | LG와 CATL에 동일한 7개 평가 기준을 적용해 결과를 구조적으로 비교할 수 있고, 해석의 일관성과 설명 가능성이 높아진다. | 포트폴리오 다양성, 기술 경쟁력, 시장 대응력, 공급망 전략, 고객/파트너 구조, 글로벌 확장성, 리스크 대응력 기준으로 양사 비교표 생성 |
+| **근거 추적 가능성** | 각 분석 결과와 보고서 항목을 source id 및 metadata와 연결해, 최종 문장이 어떤 자료를 바탕으로 생성되었는지 역추적할 수 있다. | 비교 결과의 특정 문장에 연결된 `source_id`, `title`, `publisher`, `date`를 통해 원문 근거를 확인하고 최종 References에 반영 |
+
 
 ## Multi-Agent & Role
 - `Supervisor Agent`: 실행 순서 제어, validation 판단, retry/loop 분기, 브랜치 동기화
@@ -49,7 +56,13 @@
 
 ## Directory Structure
 ```text
-[최종 나오면 채우기]
+.
+├── README.md                          # 프로젝트 소개 및 사용 개요
+├── README.img/                        # README에 삽입하는 아키텍처/
+├── battery_market_report_agent/       # 메인 애플리케이션 패키지
+├── rag_data/                          # 기본 RAG 지식 문서
+├── scripts/                           # 보조 실행/점검 스크립트
+└── 설계 산출물/                          # 상세 설계 문서 및 원본 다이어그램
 ```
 
 ## Tech Stack
@@ -57,13 +70,17 @@
 | Category | Details |
 |----------|---------|
 | Framework | LangGraph, LangChain, Python |
-| LLM | OpenAI API |
-| Retrieval | FAISS |
+| LLM | OpenAI API (`gpt-4.1-mini` 기본값) |
+| Vector DB | Qdrant |
+| Retrieval | QdrantVectorStore + FAISS (in-memory augmentation) |
 | Web Search | Tavily |
-| Embedding | BAAI/bge-m3 |
+| Embedding | BAAI/bge-m3 (다국어 지원, 8192 토큰 지원) |
 | Runtime Pattern | Static KB + Runtime Augmentation |
 | State Management | TypedDict-based Workflow State |
 
 ## Contributors 
-- 김유빈 :
-- 양예원 : 
+
+**[TEAM : Parity]**  
+
+- 김유빈 : Supervisor Pattern 기반 설계, RAG-first + Web Search fallback 기반 보강 루프 설계, Architecture 설계
+- 양예원 : AI Agentic Workflow 설계, 비교 분석 및 SWOT/전략 인사이트 도출 로직 설계, Architecture 설계
