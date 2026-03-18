@@ -1,3 +1,5 @@
+[결과 보고서 링크](https://github.com/SKALA-Agents/battery_market_report_agent/blob/main/agent_cloud1%E1%84%87%E1%85%A1%E1%86%AB_%E1%84%8B%E1%85%A3%E1%86%BC%E1%84%8B%E1%85%A8%E1%84%8B%E1%85%AF%E1%86%AB%2B%E1%84%80%E1%85%B5%E1%86%B7%E1%84%8B%E1%85%B2%E1%84%87%E1%85%B5%E1%86%AB.pdf)
+
 # Battery Market Report AI Agent
 
 > LG에너지솔루션과 CATL의 전략을 데이터 기반으로 비교 분석하고, 의사결정에 활용 가능한 시장 보고서를 생성하는 멀티 에이전트 시스템
